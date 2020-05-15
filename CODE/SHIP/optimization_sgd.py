@@ -6,31 +6,36 @@ from coordinate_selector import *
 
 crossEnt = lambda p, p_opt: np.sum(np.multiply(-p_opt, np.log(p)), axis=1)
 
+
 def crossEnt_Loss(puvhat, puv):
-    p_opt = np.concatenate((puvhat[:,None], (1-puvhat)[:,None]), axis=1)
-    p = np.concatenate((puv[:,None], (1-puv)[:,None]), axis=1)
-    #loss = np.mean(crossEnt(p, p_opt))
+    p_opt = np.concatenate((puvhat[:, None], (1 - puvhat)[:, None]), axis=1)
+    p = np.concatenate((puv[:, None], (1 - puv)[:, None]), axis=1)
+    # loss = np.mean(crossEnt(p, p_opt))
     loss = np.sum(crossEnt(p, p_opt))
     return loss
+
 
 def get_gradient2(anchors, sel_instance, puv, puvhat, scores):
     gradient = np.zeros((anchors.shape[0], scores.shape[1]))
     for i in range(len(anchors)):
         if anchors[i] == -1:
-            gradient[i,:] = (scores[sel_instance, :]) * (puv[i] - puvhat[i])
+            gradient[i, :] = (scores[sel_instance, :]) * (puv[i] - puvhat[i])
         else:
-            gradient[i,:] = (scores[sel_instance, :] - scores[anchors[i], :]) * (puv[i] - puvhat[i])
+            gradient[i, :] = (scores[sel_instance, :] - scores[anchors[i], :]) * (puv[i] - puvhat[i])
 
     return gradient
+
 
 def get_gradient(anchors, sel_instance, puv, puvhat, scores):
-    gradient = (scores[sel_instance,:] - scores[anchors,:]) * (puv - puvhat)[:,np.newaxis]
+    gradient = (scores[sel_instance, :] - scores[anchors, :]) * (puv - puvhat)[:, np.newaxis]
     return gradient
+
 
 def get_puv(scores, w, anchors, sel_instance):
     agg_scores = scores.dot(w)
-    puv = expit(agg_scores[sel_instance] -  agg_scores[anchors])
+    puv = expit(agg_scores[sel_instance] - agg_scores[anchors])
     return puv
+
 
 def optimize_posneg_sample_SGD(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params, learning_params):
     anchors = anchors.astype(int)
@@ -39,15 +44,15 @@ def optimize_posneg_sample_SGD(sel_label, sel_instance, w, scores, puvhat, ancho
     stop_arr = []
     agg_scores = scores.dot(w)
 
-    puv = expit(agg_scores[sel_instance] -  agg_scores[anchors])
+    puv = expit(agg_scores[sel_instance] - agg_scores[anchors])
 
     curr_loss = crossEnt_Loss(puvhat, puv)
     iter = 0
 
-    while(True):
+    while (True):
         w_new = w.copy()
 
-        #Get Gradient
+        # Get Gradient
         diff = get_gradient(anchors, sel_instance, puv, puvhat, scores)
 
         # Updates
@@ -65,7 +70,7 @@ def optimize_posneg_sample_SGD(sel_label, sel_instance, w, scores, puvhat, ancho
         curr_loss = new_loss
         puv = puv_new
 
-        #print curr_loss
+        # print(curr_loss)
         iter += 1
         if (convergence_diff < 1e-6):
             stop_condition = 1
@@ -80,70 +85,12 @@ def optimize_posneg_sample_SGD(sel_label, sel_instance, w, scores, puvhat, ancho
             stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
             break
 
-    print "End Loss=" + str(curr_loss)
+    print("End Loss=" + str(curr_loss))
     return w, stop_arr
 
-def optimize_posneg_sample_Momentum(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params, learning_params, gamma):
-    anchors = anchors.astype(int)
-    learning_rate = learning_params['learning_rate']
-    Tmax = learning_params['num_iters']
-    stop_arr = []
-    agg_scores = scores.dot(w)
 
-    puv = expit(agg_scores[sel_instance] -  agg_scores[anchors])
-
-    curr_loss = crossEnt_Loss(puvhat, puv)
-    iter = 0
-
-    prev_update = None
-
-    while(True):
-        w_new = w.copy()
-
-        #Get Gradient
-        diff = get_gradient(anchors, sel_instance, puv, puvhat, scores)
-        if prev_update is None:
-            update = learning_rate * diff
-        else:
-            update = gamma * prev_update + learning_rate * diff
-
-        # Updates
-        for i in range(len(anchors)):
-            w_index = np.array(coords[i])
-            w_new[w_index] = w_new[w_index] - (update[i, w_index])
-
-
-        prev_update = update
-
-        convergence_diff = np.linalg.norm(np.abs(w_new - w))
-        w = w_new
-        w = normalize_weights(w)
-        puv_new = get_puv(scores, w, anchors, sel_instance)
-        puv = puv_new
-
-        new_loss = crossEnt_Loss(puvhat, puv_new)
-        loss_diff = curr_loss - new_loss
-        curr_loss = new_loss
-
-        #print curr_loss
-        iter += 1
-        if (convergence_diff < 1e-6):
-            stop_condition = 1
-            stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
-            break
-        if (iter > Tmax):
-            stop_condition = 2
-            stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
-            break
-        if (loss_diff < 1e-8):
-            stop_condition = 3
-            stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
-            break
-
-    print "End Loss="+str(curr_loss)
-    return w, stop_arr
-
-def optimize_posneg_sample_NAG(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params, learning_params, gamma):
+def optimize_posneg_sample_Momentum(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params,
+                                    learning_params, gamma):
     anchors = anchors.astype(int)
     learning_rate = learning_params['learning_rate']
     Tmax = learning_params['num_iters']
@@ -157,7 +104,68 @@ def optimize_posneg_sample_NAG(sel_label, sel_instance, w, scores, puvhat, ancho
 
     prev_update = None
 
-    while(True):
+    while (True):
+        w_new = w.copy()
+
+        # Get Gradient
+        diff = get_gradient(anchors, sel_instance, puv, puvhat, scores)
+        if prev_update is None:
+            update = learning_rate * diff
+        else:
+            update = gamma * prev_update + learning_rate * diff
+
+        # Updates
+        for i in range(len(anchors)):
+            w_index = np.array(coords[i])
+            w_new[w_index] = w_new[w_index] - (update[i, w_index])
+
+        prev_update = update
+
+        convergence_diff = np.linalg.norm(np.abs(w_new - w))
+        w = w_new
+        w = normalize_weights(w)
+        puv_new = get_puv(scores, w, anchors, sel_instance)
+        puv = puv_new
+
+        new_loss = crossEnt_Loss(puvhat, puv_new)
+        loss_diff = curr_loss - new_loss
+        curr_loss = new_loss
+
+        # print(curr_loss)
+        iter += 1
+        if (convergence_diff < 1e-6):
+            stop_condition = 1
+            stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
+            break
+        if (iter > Tmax):
+            stop_condition = 2
+            stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
+            break
+        if (loss_diff < 1e-8):
+            stop_condition = 3
+            stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
+            break
+
+    print("End Loss=" + str(curr_loss))
+    return w, stop_arr
+
+
+def optimize_posneg_sample_NAG(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params, learning_params,
+                               gamma):
+    anchors = anchors.astype(int)
+    learning_rate = learning_params['learning_rate']
+    Tmax = learning_params['num_iters']
+    stop_arr = []
+    agg_scores = scores.dot(w)
+
+    puv = expit(agg_scores[sel_instance] - agg_scores[anchors])
+
+    curr_loss = crossEnt_Loss(puvhat, puv)
+    iter = 0
+
+    prev_update = None
+
+    while (True):
         w_new = w.copy()
 
         if prev_update is None:
@@ -192,7 +200,7 @@ def optimize_posneg_sample_NAG(sel_label, sel_instance, w, scores, puvhat, ancho
         loss_diff = curr_loss - new_loss
         curr_loss = new_loss
 
-        #print "Loss="+str(curr_loss)
+        # print("Loss="+str(curr_loss))
         iter += 1
         if (convergence_diff < 1e-6):
             stop_condition = 1
@@ -209,6 +217,7 @@ def optimize_posneg_sample_NAG(sel_label, sel_instance, w, scores, puvhat, ancho
 
     return w, stop_arr
 
+
 def optimize_posneg_sample_AG2(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params, learning_params):
     anchors = anchors.astype(int)
     learning_rate = learning_params['learning_rate']
@@ -223,7 +232,7 @@ def optimize_posneg_sample_AG2(sel_label, sel_instance, w, scores, puvhat, ancho
     ys = [w]
     xs = [w]
 
-    while(True):
+    while (True):
         y = ys[-1]
         x = xs[-1]
 
@@ -244,7 +253,7 @@ def optimize_posneg_sample_AG2(sel_label, sel_instance, w, scores, puvhat, ancho
         new_loss = crossEnt_Loss(puvhat, puv_new)
         loss_diff = curr_loss - new_loss
         curr_loss = new_loss
-        print "Loss=" + str(curr_loss)
+        print("Loss=" + str(curr_loss))
 
         iter += 1
         if (convergence_diff < 1e-6):
@@ -266,14 +275,15 @@ def optimize_posneg_sample_AG2(sel_label, sel_instance, w, scores, puvhat, ancho
         y_plus = x_plus.copy()
         for i in range(len(anchors)):
             w_index = np.array(coords[i])
-            y_plus[w_index] = y_plus[w_index] + ((iter-1)/float(iter+2)) * (x_plus - x)[w_index]
+            y_plus[w_index] = y_plus[w_index] + ((iter - 1) / float(iter + 2)) * (x_plus - x)[w_index]
 
         y_plus = normalize_weights(y_plus)
         ys.append(y_plus)
         xs.append(x_plus)
 
-    print "Loss="+str(curr_loss)
+    print("Loss=" + str(curr_loss))
     return x_plus, stop_arr
+
 
 class BacktrackingLineSearch(object):
     def __init__(self):
@@ -294,20 +304,21 @@ class BacktrackingLineSearch(object):
 
             return crossEnt_Loss(puvhat, puv_diff)
 
-
     def __call__(self, g, w, anchors, puv, puvhat, coords):
         a = self.alpha
         f = self.f
 
         g_sum = np.sum(g, axis=0)
-        while(f(puvhat, puv, coords, w, g, a) > f(puvhat, puv, coords, w, None, a) - 0.5 * a * (g_sum.dot(g_sum))):
+        while (f(puvhat, puv, coords, w, g, a) > f(puvhat, puv, coords, w, None, a) - 0.5 * a * (g_sum.dot(g_sum))):
             a = a * self.beta
             if a < 1e-4:
                 return a
 
         return a
 
-def optimize_posneg_sample_AG2_BT(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params, learning_params):
+
+def optimize_posneg_sample_AG2_BT(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params,
+                                  learning_params):
     anchors = anchors.astype(int)
     learning_rate = learning_params['learning_rate']
     Tmax = learning_params['num_iters']
@@ -346,7 +357,7 @@ def optimize_posneg_sample_AG2_BT(sel_label, sel_instance, w, scores, puvhat, an
         new_loss = crossEnt_Loss(puvhat, puv_new)
         loss_diff = curr_loss - new_loss
         curr_loss = new_loss
-        print "Loss=" + str(curr_loss)
+        print("Loss=" + str(curr_loss))
 
         iter += 1
         if (convergence_diff < 1e-6):
@@ -374,8 +385,9 @@ def optimize_posneg_sample_AG2_BT(sel_label, sel_instance, w, scores, puvhat, an
         ys.append(y_plus)
         xs.append(x_plus)
 
-    print "Loss=" + str(curr_loss)
+    print("Loss=" + str(curr_loss))
     return x_plus, stop_arr
+
 
 def optimize_posneg_sample_SGD_Backtracking(sel_label, sel_instance, w, scores, puvhat, anchors, coords,
                                             cd_params, learning_params, beta):
@@ -386,12 +398,12 @@ def optimize_posneg_sample_SGD_Backtracking(sel_label, sel_instance, w, scores, 
     stop_arr = []
     agg_scores = scores.dot(w)
 
-    puv = expit(agg_scores[sel_instance] -  agg_scores[anchors])
+    puv = expit(agg_scores[sel_instance] - agg_scores[anchors])
 
     curr_loss = crossEnt_Loss(puvhat, puv)
     iter = 0
 
-    while(True):
+    while (True):
         w_new = w.copy()
 
         ###Get Ideal Learning Rate:
@@ -409,7 +421,7 @@ def optimize_posneg_sample_SGD_Backtracking(sel_label, sel_instance, w, scores, 
         new_loss_diff = crossEnt_Loss(puvhat, puv_diff)
 
         # Check the conditions
-        while(new_loss_diff > curr_loss - 0.5 * lr * grad_norm2**2):
+        while (new_loss_diff > curr_loss - 0.5 * lr * grad_norm2 ** 2):
             lr = beta * lr
             w_diff = w.copy()
             for i in range(len(anchors)):
@@ -436,8 +448,8 @@ def optimize_posneg_sample_SGD_Backtracking(sel_label, sel_instance, w, scores, 
         loss_diff = curr_loss - new_loss
         curr_loss = new_loss
 
-        print "Ideal LR="+str(lr)+ " and Loss="+str(new_loss)+" and Loss diff="+str(loss_diff)
-        # print curr_loss
+        print("Ideal LR=" + str(lr) + " and Loss=" + str(new_loss) + " and Loss diff=" + str(loss_diff))
+        # print(curr_loss)
         iter += 1
         if (convergence_diff < 1e-6):
             stop_condition = 1
@@ -452,8 +464,9 @@ def optimize_posneg_sample_SGD_Backtracking(sel_label, sel_instance, w, scores, 
             stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
             break
 
-    print "End Loss=" + str(curr_loss)
+    print("End Loss=" + str(curr_loss))
     return w, stop_arr
+
 
 def optimize_posneg_sample_NAG_Backtracking(sel_label, sel_instance, w, scores, puvhat, anchors, coords,
                                             cd_params, learning_params, gamma):
@@ -508,7 +521,7 @@ def optimize_posneg_sample_NAG_Backtracking(sel_label, sel_instance, w, scores, 
         loss_diff = curr_loss - new_loss
         curr_loss = new_loss
 
-        print "Loss="+str(curr_loss)
+        print("Loss=" + str(curr_loss))
         iter += 1
         if (convergence_diff < 1e-6):
             stop_condition = 1
@@ -525,6 +538,7 @@ def optimize_posneg_sample_NAG_Backtracking(sel_label, sel_instance, w, scores, 
 
     return w, stop_arr
 
+
 def optimize_posneg_sample_SGD_1(sel_label, sel_instance, w, scores, puvhat, anchors, coords, learning_params):
     anchors = anchors.astype(int)
     learning_rate = learning_params['learning_rate']
@@ -540,7 +554,7 @@ def optimize_posneg_sample_SGD_1(sel_label, sel_instance, w, scores, puvhat, anc
     w_new = w.copy()
 
     for i in range(len(anchors)):
-        diff =  (scores[sel_instance,:] - scores[anchors[i],:]) * (puv[i] - puvhat[i])
+        diff = (scores[sel_instance, :] - scores[anchors[i], :]) * (puv[i] - puvhat[i])
         w_index = np.array(coords[i])
         w_new[w_index] = w_new[w_index] - diff[w_index]
 
@@ -549,16 +563,19 @@ def optimize_posneg_sample_SGD_1(sel_label, sel_instance, w, scores, puvhat, anc
 
     return w, stop_arr
 
+
 def create_batches(size_samples, size_perBatch):
     batches = []
     numBatches = int(np.ceil(size_samples * 1.0 / size_perBatch))
     for i in range(numBatches):
-        batches.append(np.arange(i*size_perBatch, min((i+1)*size_perBatch,size_samples)))
+        batches.append(np.arange(i * size_perBatch, min((i + 1) * size_perBatch, size_samples)))
 
     return batches
 
-def optimize_posneg_sample_SGD_Lim100(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params, learning_params):
-    coords=np.array(coords)
+
+def optimize_posneg_sample_SGD_Lim100(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params,
+                                      learning_params):
+    coords = np.array(coords)
     anchors = anchors.astype(int)
     learning_rate = learning_params['learning_rate']
     Tmax = learning_params['num_iters']
@@ -575,7 +592,7 @@ def optimize_posneg_sample_SGD_Lim100(sel_label, sel_instance, w, scores, puvhat
     while (True):
         w_new = w.copy()
 
-        batch_index = iter%len(batches)
+        batch_index = iter % len(batches)
         batch_anchors = anchors[batches[batch_index]]
         batch_puv = puv[batches[batch_index]]
         batch_puvhat = puvhat[batches[batch_index]]
@@ -583,7 +600,8 @@ def optimize_posneg_sample_SGD_Lim100(sel_label, sel_instance, w, scores, puvhat
 
         for i in range(len(batch_anchors)):
             w_index = np.array(batch_coords[i])
-            diff = (scores[sel_instance, w_index] - scores[batch_anchors[i].astype(int), w_index]) * (batch_puv[i] - batch_puvhat[i])
+            diff = (scores[sel_instance, w_index] - scores[batch_anchors[i].astype(int), w_index]) * (
+                        batch_puv[i] - batch_puvhat[i])
             w_new[w_index] = w_new[w_index] - (learning_rate * diff)
 
         convergence_diff = np.linalg.norm(np.abs(w_new - w))
@@ -610,25 +628,27 @@ def optimize_posneg_sample_SGD_Lim100(sel_label, sel_instance, w, scores, puvhat
             stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
             break
 
-    print "End Loss="+str(cur_loss)
-    print stop_arr
+    print("End Loss=" + str(cur_loss))
+    print(stop_arr)
     return w, stop_arr
 
-def optimize_posneg_sample_Momentum_Lim100(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params, learning_params, gamma):
+
+def optimize_posneg_sample_Momentum_Lim100(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params,
+                                           learning_params, gamma):
     anchors = anchors.astype(int)
     coords = np.array(coords)
     learning_rate = learning_params['learning_rate']
     Tmax = learning_params['num_iters']
     stop_arr = []
     agg_scores = scores.dot(w)
-    puv = expit(agg_scores[sel_instance] -  agg_scores[anchors])
+    puv = expit(agg_scores[sel_instance] - agg_scores[anchors])
 
     curr_loss = crossEnt_Loss(puvhat, puv)
     iter = 0
     batches = create_batches(len(anchors), 100)
     prev_update = None
 
-    while(True):
+    while (True):
         w_new = w.copy()
 
         batch_index = iter % len(batches)
@@ -637,7 +657,7 @@ def optimize_posneg_sample_Momentum_Lim100(sel_label, sel_instance, w, scores, p
         batch_puvhat = puvhat[batches[batch_index]]
         batch_coords = coords[batches[batch_index]]
 
-        #Get Gradient
+        # Get Gradient
         diff = get_gradient(batch_anchors, sel_instance, batch_puv, batch_puvhat, scores)
 
         prev_update_overall = np.sum(prev_update, axis=0)
@@ -665,7 +685,7 @@ def optimize_posneg_sample_Momentum_Lim100(sel_label, sel_instance, w, scores, p
         loss_diff = curr_loss - new_loss
         curr_loss = new_loss
 
-        #print curr_loss
+        # print(curr_loss)
         iter += 1
         if (convergence_diff < 1e-6):
             stop_condition = 1
@@ -680,25 +700,26 @@ def optimize_posneg_sample_Momentum_Lim100(sel_label, sel_instance, w, scores, p
             stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
             break
 
-    print "End Loss="+str(curr_loss)
+    print("End Loss=" + str(curr_loss))
     return w, stop_arr
 
 
-def optimize_posneg_sample_Momentum_Lim100_NoS2(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params, learning_params, gamma):
+def optimize_posneg_sample_Momentum_Lim100_NoS2(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params,
+                                                learning_params, gamma):
     anchors = anchors.astype(int)
     coords = np.array(coords)
     learning_rate = learning_params['learning_rate']
     Tmax = learning_params['num_iters']
     stop_arr = []
     agg_scores = scores.dot(w)
-    puv = expit(agg_scores[sel_instance] -  agg_scores[anchors])
+    puv = expit(agg_scores[sel_instance] - agg_scores[anchors])
 
     curr_loss = crossEnt_Loss(puvhat, puv)
     iter = 0
     batches = create_batches(len(anchors), 100)
     prev_update = None
 
-    while(True):
+    while (True):
         w_new = w.copy()
 
         batch_index = iter % len(batches)
@@ -707,7 +728,7 @@ def optimize_posneg_sample_Momentum_Lim100_NoS2(sel_label, sel_instance, w, scor
         batch_puvhat = puvhat[batches[batch_index]]
         batch_coords = coords[batches[batch_index]]
 
-        #Get Gradient
+        # Get Gradient
         diff = get_gradient2(batch_anchors, sel_instance, batch_puv, batch_puvhat, scores)
 
         prev_update_overall = np.sum(prev_update, axis=0)
@@ -735,7 +756,7 @@ def optimize_posneg_sample_Momentum_Lim100_NoS2(sel_label, sel_instance, w, scor
         loss_diff = curr_loss - new_loss
         curr_loss = new_loss
 
-        #print curr_loss
+        # print(curr_loss)
         iter += 1
         if (convergence_diff < 1e-6):
             stop_condition = 1
@@ -750,10 +771,12 @@ def optimize_posneg_sample_Momentum_Lim100_NoS2(sel_label, sel_instance, w, scor
             stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
             break
 
-    print "End Loss="+str(curr_loss)
+    print("End Loss=" + str(curr_loss))
     return w, stop_arr
 
-def optimize_posneg_sample_NAG_Lim100(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params, learning_params, gamma):
+
+def optimize_posneg_sample_NAG_Lim100(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params,
+                                      learning_params, gamma):
     anchors = anchors.astype(int)
     coords = np.array(coords)
     learning_rate = learning_params['learning_rate']
@@ -769,7 +792,7 @@ def optimize_posneg_sample_NAG_Lim100(sel_label, sel_instance, w, scores, puvhat
 
     prev_update = None
 
-    while(True):
+    while (True):
         w_new = w.copy()
 
         batch_index = iter % len(batches)
@@ -784,7 +807,7 @@ def optimize_posneg_sample_NAG_Lim100(sel_label, sel_instance, w, scores, puvhat
         else:
             w_diff = w.copy()
             prev_update_overall = np.sum(prev_update, axis=0)
-            prev_update_overall = np.tile(prev_update_overall,(len(batch_anchors),1))
+            prev_update_overall = np.tile(prev_update_overall, (len(batch_anchors), 1))
 
             for i in range(len(batch_anchors)):
                 w_index = np.array(batch_coords[i])
@@ -812,7 +835,7 @@ def optimize_posneg_sample_NAG_Lim100(sel_label, sel_instance, w, scores, puvhat
         loss_diff = curr_loss - new_loss
         curr_loss = new_loss
 
-        #print "Loss="+str(curr_loss)
+        # print("Loss="+str(curr_loss))
         iter += 1
         if (convergence_diff < 1e-6):
             stop_condition = 1
@@ -827,7 +850,7 @@ def optimize_posneg_sample_NAG_Lim100(sel_label, sel_instance, w, scores, puvhat
             stop_arr.append((stop_condition, convergence_diff, loss_diff, iter))
             break
 
-    print "End Loss="+str(curr_loss)
+    print("End Loss=" + str(curr_loss))
     return w, stop_arr
 
 
@@ -836,7 +859,7 @@ if __name__ == '__main__':
     # Read the input file
     data_file = "/Users/hemanklamba/Documents/Experiments/Interactive_Outliers/Dataset/Feb_DS/ann.csv"
     X = np.loadtxt(data_file)
-    print "Orig data read=" + str(X.shape)
+    print("Orig data read=" + str(X.shape))
     y = X[:, X.shape[1] - 1]
     X = X[:, 0:X.shape[1] - 1]
     # Get scores vector
@@ -846,8 +869,8 @@ if __name__ == '__main__':
     # Set weight vector
     w = np.ones(scores.shape[1])
     w = w / np.sqrt(w.dot(w))
-    print "Shape of X=" + str(X.shape)
-    print "Shape of w=" + str(w.shape)
+    print("Shape of X=" + str(X.shape))
+    print("Shape of w=" + str(w.shape))
 
     # Get an arbitrary sel_label and sel_instance
     sel_label = 1
@@ -870,7 +893,7 @@ if __name__ == '__main__':
     cd_params['neg_coords'] = 'UNION'
     cd_params['coords'] = 'UNION'
 
-    #Set learning_params
+    # Set learning_params
     learning_params = {}
     learning_params['learning_rate'] = 0.1
     learning_params['num_iters'] = 5000
@@ -888,86 +911,86 @@ if __name__ == '__main__':
                                                   learning_params)
 
     simple_time = time.time() - start_time
-    print "Time taken=" + str(simple_time)
-    print sarr_simp
-    print wsimp
-    #print np.argsort(wsimp)
+    print("Time taken=" + str(simple_time))
+    print(sarr_simp)
+    print(wsimp)
+    #print(np.argsort(wsimp))
 
     agg_scores_wsimp = scores.dot(wsimp)
     sorted_indexes_wsimp = sort(agg_scores_wsimp, decreasing=True)
-    
+
     start_time = time.time()
     ws_mom, sarr_mom = optimize_posneg_sample_Momentum(sel_label, sel_instance, w, scores, puvhat, anchors, coords, cd_params,
                                     learning_params, 0.75)
     mom_time = time.time() - start_time
-    print "Time taken="+str(mom_time)
-    print sarr_mom
-    print ws_mom
-    #print np.argsort(ws_mom)
+    print("Time taken="+str(mom_time))
+    print(sarr_mom)
+    print(ws_mom)
+    #print(np.argsort(ws_mom))
 
     agg_scores_wsmom =  scores.dot(ws_mom)
     sorted_indexes_wsmom = sort(agg_scores_wsmom, decreasing=True)
 
-    print sorted_indexes_wsimp
-    print sorted_indexes_wsmom
-    print np.sum(sorted_indexes_wsimp - sorted_indexes_wsmom)
-    
-    
+    print(sorted_indexes_wsimp)
+    print(sorted_indexes_wsmom)
+    print(np.sum(sorted_indexes_wsimp - sorted_indexes_wsmom))
+
+
     start_time = time.time()
     ws_nag, sarr_nag = optimize_posneg_sample_NAG(sel_label, sel_instance, w, scores, puvhat, anchors, coords,
                                                        cd_params,
                                                        learning_params, 0.75)
     nag_time = time.time() - start_time
-    print "Time taken=" + str(nag_time)
-    print sarr_nag
-    print ws_nag
+    print("Time taken=" + str(nag_time))
+    print(sarr_nag)
+    print(ws_nag)
 
     agg_scores_wsnag = scores.dot(ws_nag)
     sorted_indexes_wsnag = sort(agg_scores_wsnag, decreasing=True)
 
-    print sorted_indexes_wsnag
+    print(sorted_indexes_wsnag)
     '''
     start_time = time.time()
-    ws_nag_bt, sarr_nag_bt = optimize_posneg_sample_SGD_Lim100(sel_label, sel_instance, w, scores, puvhat, anchors, coords,
-                                                  cd_params, learning_params)
+    ws_nag_bt, sarr_nag_bt = optimize_posneg_sample_SGD_Lim100(sel_label, sel_instance, w, scores, puvhat, anchors,
+                                                               coords,
+                                                               cd_params, learning_params)
     nag_bt_time = time.time() - start_time
-    print "Time taken=" + str(nag_bt_time)
-    print ws_nag_bt
-    print sarr_nag_bt
+    print("Time taken=" + str(nag_bt_time))
+    print(ws_nag_bt)
+    print(sarr_nag_bt)
 
     start_time = time.time()
     ws_nag_bt, sarr_nag_bt = optimize_posneg_sample_Momentum_Lim100(sel_label, sel_instance, w, scores, puvhat, anchors,
-                                                               coords,
-                                                               cd_params, learning_params, 0.75)
-    nag_bt_time = time.time() - start_time
-    print "Time taken=" + str(nag_bt_time)
-    print ws_nag_bt
-    print sarr_nag_bt
-
-    start_time = time.time()
-    ws_nag_bt, sarr_nag_bt = optimize_posneg_sample_NAG_Lim100(sel_label, sel_instance, w, scores, puvhat, anchors,
                                                                     coords,
                                                                     cd_params, learning_params, 0.75)
     nag_bt_time = time.time() - start_time
-    print "Time taken=" + str(nag_bt_time)
-    print ws_nag_bt
-    print sarr_nag_bt
+    print("Time taken=" + str(nag_bt_time))
+    print(ws_nag_bt)
+    print(sarr_nag_bt)
 
+    start_time = time.time()
+    ws_nag_bt, sarr_nag_bt = optimize_posneg_sample_NAG_Lim100(sel_label, sel_instance, w, scores, puvhat, anchors,
+                                                               coords,
+                                                               cd_params, learning_params, 0.75)
+    nag_bt_time = time.time() - start_time
+    print("Time taken=" + str(nag_bt_time))
+    print(ws_nag_bt)
+    print(sarr_nag_bt)
 
     '''
     start_time = time.time()
     ws_ag2, sarr_ag2 = optimize_posneg_sample_AG2(sel_label, sel_instance, w, scores, puvhat, anchors, coords,
                                                   cd_params, learning_params)
     ag2_time = time.time() - start_time
-    print "Time taken="+str(ag2_time)
-    print ws_ag2
-    print sarr_ag2
+    print("Time taken="+str(ag2_time))
+    print(ws_ag2)
+    print(sarr_ag2)
 
     start_time = time.time()
     ws_ag2_BT, sarr_ag2_BT = optimize_posneg_sample_AG2_BT(sel_label, sel_instance, w, scores, puvhat, anchors, coords,
                                                   cd_params, learning_params)
     ag2_BT_time = time.time() - start_time
-    print "Time taken=" + str(ag2_BT_time)
-    print ws_ag2_BT
-    print sarr_ag2_BT
+    print("Time taken=" + str(ag2_BT_time))
+    print(ws_ag2_BT)
+    print(sarr_ag2_BT)
     '''
